@@ -2,22 +2,13 @@ import mysql.connector
 from dotenv import load_dotenv
 import os
 from datetime import datetime
+import numpy as np
+import pandas as pd
+from geo_utils2 import xy_to_latlon
+
 
 class FlightRecord:
     def __init__(self):
-
-        #Plan de vuelo
-        self.callsign: str = ""
-        self.departure: str = ""
-        self.arrival: str = ""
-        self.arr_hour: str = ""
-        self.thr_hour: str = ""
-        self.route: str = ""
-        self.aircraft: str = ""
-        self.wake: str = ""
-        self.wake_recat: str = ""
-        self.star: str = ""
-        self.arr_runway: str = ""
 
         #Record
         self.time: int = 0          #ToD [s]
@@ -32,7 +23,7 @@ class FlightRecord:
         self.lat: float = 0.0       #Latitud [º]
         self.lon: float = 0.0       #Longitud [º]
         self.sensor: str = ""       #ADSB-BCN/Radar-BCN
-        self.cont: str = ""         #Contador?
+        self.cont: str = ""         #Contador
         self.numfr: int = 0         #Contador de frustrada
 
 
@@ -44,6 +35,43 @@ class FlightRecord:
 
         return day, tod
         
+class Flight:
+    #Corresponde a todos los records de un mismo vuelo
+    def __init__(self):
+        #Plan de vuelo
+        self.callsign: str = ""
+        self.departure: str = ""
+        self.arrival: str = ""
+        self.arr_hour: str = ""
+        self.thr_hour: str = ""
+        self.thr_time: int = 0
+        self.route: str = ""
+        self.aircraft: str = ""
+        self.wake: str = ""
+        self.wake_recat: str = ""
+        self.star: str = ""
+        self.arr_runway: str = ""
+
+        self.records = []
+
+class Arrival:
+    def __init__(self):
+        self.callsign: str = ""
+        self.runway: str = ""
+        self.numfr: int = 0
+        self.last_arr: bool = True
+        self.thr_time: int = 0
+
+        self.records: list = []
+
+        self.thr_reached: bool = False
+
+        self.thr_record = None
+        self.thr_dist = None
+        self.mile4_record = None
+        self.mile4_dist = None
+
+
 
 def read_bbdd():
     load_dotenv()
@@ -59,42 +87,149 @@ def read_bbdd():
         print("Conexion correcta")
 
     cursor = connection.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM arribades")
+    cursor.execute("SELECT * FROM arribades WHERE HoraARR >= '2025-01-14 00:00:00' AND HoraARR < '2025-01-14 23:59:59'")
+    #cursor.execute("SELECT * FROM arribades")
 
-    vuelos = []
+    vuelos = {}
+
 
     for row in cursor.fetchall():
-        flight = FlightRecord()
-        flight.callsign = row["Callsign"]
-        flight.departure = row["Origen"]
-        flight.arrival = row["Desti"]
-        flight.arr_hour = row["HoraARR"]
-        flight.thr_hour = row["HoraTHR"]
-        flight.route = row["RutaSACTA"]
-        flight.aircraft = row["Aeronau"]
-        flight.wake = row["Estela"]
-        flight.wake_recat = row["EstelaRecat"]
-        flight.star = row["STAR"]
-        flight.arr_runway = row["PistaARR"]
-        flight.pos_x = row["X"]
-        flight.pos_y = row["Y"]
-        flight.fl = row["FL"]
-        flight.alt = row["ALT"]
-        flight.bp = row["BP"]
-        flight.gs = row["GS"]
-        flight.ias = row["IAS"]
-        flight.lat = row["lat"]
-        flight.lon = row["lon"]
-        flight.sensor = row["Sensor"]
-        flight.cont = row["Cont"]
-        flight.numfr = row["NumFR"]
-        day, time = FlightRecord.date_to_ToD(row["ToD"])
-        flight.day = day
-        flight.time = time
+        
+        id = (row["Callsign"])
 
-        vuelos.append(flight)
+        if id not in vuelos:
+
+            
+            flight = Flight()
+            flight.callsign = row["Callsign"]
+            flight.departure = row["Origen"]
+            flight.arrival = row["Desti"]
+            flight.arr_hour = row["HoraARR"]
+            flight.thr_hour = row["HoraTHR"]
+            flight.route = row["RutaSACTA"]
+            flight.aircraft = row["Aeronau"]
+            flight.wake = row["Estela"]
+            flight.wake_recat = row["EstelaRecat"]
+            flight.star = row["STAR"]
+            flight.arr_runway = row["PistaARR"]
+
+            thrday,thrtime = FlightRecord.date_to_ToD(row["HoraTHR"])
+            flight.thr_time = thrtime
+            vuelos[id] = flight
+
+        rec = FlightRecord()
+        rec.pos_x = row["X"]
+        rec.pos_y = row["Y"]
+        rec.fl = row["FL"]
+        rec.alt = row["ALT"]
+        rec.bp = row["BP"]
+        rec.gs = row["GS"]
+        rec.ias = row["IAS"]
+        rec.lat = row["lat"]
+        rec.lon = row["lon"]
+        rec.sensor = row["Sensor"]
+        rec.cont = row["Cont"]
+        rec.numfr = row["NumFR"]
+        day, time = FlightRecord.date_to_ToD(row["ToD"])
+        rec.day = day
+        rec.time = time
+
+        vuelos[id].records.append(rec)
 
     cursor.close()
     connection.close()
 
     return vuelos
+
+def get_arrivals(flights):
+    arrivals = []
+
+    for flight in flights:
+        rec_for_arr = {}
+        order = []
+
+
+        #Mirar crear arrival si existe frustrada o no
+        for rec in flight.records:
+
+            fr_index = rec.numfr
+
+            if fr_index not in rec_for_arr:
+                rec_for_arr[fr_index] = []
+                order.append(fr_index)
+            rec_for_arr[fr_index].append(rec)
+        
+        for i, fr_index in enumerate(order):
+            arr = Arrival()
+            arr.callsign = flight.callsign
+            arr.runway = flight.arr_runway
+            arr.numfr = fr_index
+            arr.last_arr = (i == len(order) - 1)
+            arr.thr_time = flight.thr_time
+            arr.records = rec_for_arr[fr_index]
+            arrivals.append(arr)
+
+    #Interpolamos valores vacios en las arrivals
+    for arr in arrivals:
+        arr.records = interpolate_records(arr)
+    
+    print("Arrivals interpoladas")
+    return arrivals
+
+def interpolate_records(flights):
+    
+    records = flights.records
+    #Si no hay suficientes records no interpolar
+    if len(records) < 2:
+        return list(records)
+    
+    #Interpolar IAS que tienen valor 0.0
+    ias_originales = [rec.ias if rec.ias != 0.0 else np.nan for rec in records]
+    ias_filtradas = pd.Series(ias_originales).interpolate(method='linear').bfill().ffill().values
+
+
+    for idx, nueva_ias in enumerate(ias_filtradas):
+        records[idx].ias = float(nueva_ias)
+
+    #Crear nuevos records interpolados
+    new_record_list = []
+
+    for i in range(len(records) - 1):
+        r = records[i]
+        r_next = records[i+1]
+
+        new_record_list.append(r)
+
+        diff = int(r_next.time - r.time)
+        if diff > 1:
+
+            dx_per_sec = (r_next.pos_x - r.pos_x)/diff
+            dy_per_sec = (r_next.pos_y - r.pos_y)/diff
+            dh_per_sec = (r_next.alt - r.alt)/diff
+            dias_per_sec = (r_next.ias - r.ias)/diff
+
+            for s in range(1, diff):
+                new_rec = FlightRecord()
+
+                new_rec.pos_x = r.pos_x + (dx_per_sec*s)
+                new_rec.pos_y = r.pos_y + (dy_per_sec*s)
+                new_rec.alt = r.alt + (dh_per_sec*s)
+                new_rec.ias = r.ias + (dias_per_sec*s)
+
+                new_rec.time = r.time + s
+                new_rec.sensor = "INTERPOLATED"
+
+                new_rec.day = r.day
+                new_rec.numfr = r.numfr
+                new_rec.cont = r.cont
+                new_rec.bp = r.bp
+
+                new_rec.lat, new_rec.lon = xy_to_latlon(new_rec.pos_x, new_rec.pos_y)
+
+                new_record_list.append(new_rec)
+
+    new_record_list.append(records[-1])
+
+    return new_record_list
+
+
