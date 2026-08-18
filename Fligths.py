@@ -26,6 +26,8 @@ class FlightRecord:
         self.cont: str = ""         #Contador
         self.numfr: int = 0         #Contador de frustrada
 
+        self.cum_dist: float = None
+
 
     def date_to_ToD(date_str):
         dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S.%f")
@@ -61,6 +63,7 @@ class Arrival:
         self.numfr: int = 0
         self.last_arr: bool = True
         self.thr_time: int = 0
+        self.arr_hour: str = ""
 
         self.records: list = []
 
@@ -70,6 +73,9 @@ class Arrival:
         self.thr_dist = None
         self.mile4_record = None
         self.mile4_dist = None
+
+        self.cum_dist: list = []
+        self.ias_dict = {}
 
 
 
@@ -87,15 +93,18 @@ def read_bbdd():
         print("Conexion correcta")
 
     cursor = connection.cursor(dictionary=True)
+    #cursor.execute("SELECT * FROM arribades WHERE HoraARR >= '2025-01-13 00:00:00' AND HoraARR < '2025-01-13 23:59:59'")
     cursor.execute("SELECT * FROM arribades WHERE HoraARR >= '2025-01-14 00:00:00' AND HoraARR < '2025-01-14 23:59:59'")
-    #cursor.execute("SELECT * FROM arribades")
 
+
+    rows = cursor.fetchall()
+    print("NUMERO FILAS: ", len(rows))
     vuelos = {}
 
 
-    for row in cursor.fetchall():
+    for row in rows:
         
-        id = (row["Callsign"])
+        id = (row["Callsign"], row["HoraARR"])
 
         if id not in vuelos:
 
@@ -139,7 +148,9 @@ def read_bbdd():
     cursor.close()
     connection.close()
 
+    print(f"Número de vuelos creados: {len(vuelos)}")
     return vuelos
+
 
 def get_arrivals(flights):
     arrivals = []
@@ -162,6 +173,7 @@ def get_arrivals(flights):
         for i, fr_index in enumerate(order):
             arr = Arrival()
             arr.callsign = flight.callsign
+            arr.arr_hour = flight.arr_hour
             arr.runway = flight.arr_runway
             arr.numfr = fr_index
             arr.last_arr = (i == len(order) - 1)

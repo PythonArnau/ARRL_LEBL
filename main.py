@@ -1,6 +1,7 @@
 from Fligths import read_bbdd, get_arrivals
-from Distancias import LeaderFollower, export_pairs_to_excel
+from Distancias import LeaderFollower, export_pairs_to_excel, radar_sparation, loa_separation, wake_separation
 from geo_utils2 import latlon_to_xy
+from Airspeed import get_ias, export_ias_to_excel
 
 #Umbrales de las pistas (posicion de google earth)
 THR_24R = latlon_to_xy(41 + 18/60 + 20.37/3600, 2 + 6/60 + 12.68/3600)
@@ -25,4 +26,14 @@ print("Arrivals procesadas")
 pairs = LeaderFollower(arrivals, lista_vuelos, THR)
 print("Parejas procesadas")
 
-export_pairs_to_excel(pairs, "Separaciones_LELB.xlsx")
+#Comprobar separaciones
+radar_check = radar_sparation(pairs)
+loa_radar_check = loa_separation(radar_check)
+wake_loa_radar_check = wake_separation(loa_radar_check)
+
+#Calcular IAS a distintas distancias
+dists = [2, 4, 6]
+ias_arrivals = get_ias(arrivals, dists, THR)
+
+export_pairs_to_excel(wake_loa_radar_check, "14_01_2025_Results_LELB.xlsx")
+export_ias_to_excel(ias_arrivals,dists,"14_01_2025_IAS.xlsx")
