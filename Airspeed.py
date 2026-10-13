@@ -33,7 +33,32 @@ def get_ias(arrivals, distances, thrs):
     
     return arrivals
 
+def get_time_to_thr(arrivals, distances, thrs):
+    #Busca el record a la distancia seleccionada. Calcula el tiempo (s) que tiene hasta llegar a la THR.
+    #Se resta el tiempo que llega a THR con el tiempo del record a la distancia especificada 
 
+    all_cum_dist(arrivals, thrs)
+
+    segundos_dia = 24*3600
+
+    for arr in arrivals:
+
+        arr.time_to_thr_dict = {}
+        thr_time = arr.thr_record.time
+
+        for dist in distances:
+            idx = min(range(len(arr.cum_dist)), key=lambda i: abs(arr.cum_dist[i] - dist))
+            rec_time = arr.records[idx].time
+            
+            #Comprobar que no cruza medianoche
+            if thr_time < rec_time:
+                time_to_thr = (thr_time + segundos_dia) - rec_time
+            else:
+                time_to_thr = thr_time - rec_time
+                
+            arr.time_to_thr_dict[dist] = time_to_thr
+    
+    return arrivals
 
 def export_ias_to_excel(arrivals, distances,
                          output_filename):
@@ -69,6 +94,47 @@ def export_ias_to_excel(arrivals, distances,
         df.to_excel(output_filename,
                     index=False,
                     sheet_name="IAS")
+        print(f"-> Datos exportados con éxito a '{output_filename}' ({len(arrivals)} arrivals).")
+    except Exception as e:
+        print(f"Error al exportar a Excel: {e}")
+
+
+def export_time_to_thr_excel(arrivals, distances, output_filename):
+    """
+    Exporta el tiempo restante hasta la THR para cada llegada y distancia.
+
+    Parameters
+    ----------
+    arrivals : list[Arrival]
+    distances : list[float]
+    output_filename : str
+    """
+
+    data = []
+
+    for arr in arrivals:
+
+        row = {
+            "Vuelo": f"{arr.callsign}_FR{arr.numfr}",
+            "Callsign": arr.callsign,
+            "Pista": arr.runway,
+            "Hora llegada": arr.arr_hour,
+            "Hora THR": arr.thr_time
+        }
+
+        for dist in distances:
+            row[f"Tiempo {dist} NM (s)"] = arr.time_to_thr_dict.get(dist)
+
+        data.append(row)
+
+    df = pd.DataFrame(data)
+
+    try:
+        df.to_excel(
+            output_filename,
+            index=False,
+            sheet_name="Tiempo_a_THR"
+        )
         print(f"-> Datos exportados con éxito a '{output_filename}' ({len(arrivals)} arrivals).")
     except Exception as e:
         print(f"Error al exportar a Excel: {e}")

@@ -1,7 +1,7 @@
 import mysql.connector
 from dotenv import load_dotenv
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 from geo_utils2 import xy_to_latlon
@@ -76,10 +76,11 @@ class Arrival:
 
         self.cum_dist: list = []
         self.ias_dict = {}
+        self.time_to_thr_dict = {}
 
 
 
-def read_bbdd():
+def read_bbdd(fecha):
     load_dotenv()
     connection = mysql.connector.connect(
         host = os.getenv("DB_HOST"),
@@ -92,9 +93,17 @@ def read_bbdd():
     if connection.is_connected():
         print("Conexion correcta")
 
+    fecha_inicio = datetime.combine(fecha, datetime.min.time())
+    fecha_fin = fecha_inicio + timedelta(days=1)
+
     cursor = connection.cursor(dictionary=True)
+
+    query = "SELECT * FROM arribades WHERE HoraARR >= %s AND HoraARR < %s"
+    cursor.execute(query, (fecha_inicio, fecha_fin))
+
     #cursor.execute("SELECT * FROM arribades WHERE HoraARR >= '2025-01-13 00:00:00' AND HoraARR < '2025-01-13 23:59:59'")
-    cursor.execute("SELECT * FROM arribades WHERE HoraARR >= '2025-01-14 00:00:00' AND HoraARR < '2025-01-14 23:59:59'")
+    #cursor.execute("SELECT * FROM arribades WHERE HoraARR >= '2025-01-14 00:00:00' AND HoraARR < '2025-01-14 23:59:59'")
+
 
 
     rows = cursor.fetchall()
@@ -181,6 +190,9 @@ def get_arrivals(flights):
             arr.records = rec_for_arr[fr_index]
             arrivals.append(arr)
 
+    #Eliminar vuelos con fallos ADS-B
+    arrivals = remove_adsb(arrivals, "CCA845")
+
     #Interpolamos valores vacios en las arrivals
     for arr in arrivals:
         arr.records = interpolate_records(arr)
@@ -244,4 +256,18 @@ def interpolate_records(flights):
 
     return new_record_list
 
+def remove_adsb(arrivals, callsign):
+    
+    #Elimina los records ADS-B de los vuelos con fallos en esos records
 
+    for arr in arrivals:
+        if arr.callsign == callsign:          
+            new_rec = []
+            
+            for rec in arr.records:
+                if rec.sensor != "ADSB-BCN":
+                    new_rec.append(rec)
+            
+            arr.records = new_rec
+
+    return arrivals
