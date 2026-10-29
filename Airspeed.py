@@ -77,8 +77,8 @@ def export_ias_to_excel(arrivals, distances,
     for arr in arrivals:
 
         row = {
-            "Vuelo": f"{arr.callsign}_FR{arr.numfr}",
-            "Callsign": arr.callsign,
+            "Vuelo": {arr.callsign},
+            "Frustrada": "Sí" if arr.numfr > 0 else "No",
             "Pista": arr.runway,
             "Hora llegada": arr.arr_hour,
         }
@@ -115,11 +115,10 @@ def export_time_to_thr_excel(arrivals, distances, output_filename):
     for arr in arrivals:
 
         row = {
-            "Vuelo": f"{arr.callsign}_FR{arr.numfr}",
-            "Callsign": arr.callsign,
+            "Vuelo": arr.callsign,
+            "Frustrada": "Sí" if arr.numfr > 0 else "No",
             "Pista": arr.runway,
-            "Hora llegada": arr.arr_hour,
-            "Hora THR": arr.thr_time
+            "Hora llegada": arr.arr_hour
         }
 
         for dist in distances:

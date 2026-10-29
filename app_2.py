@@ -71,9 +71,14 @@ INC_COLS = list(INC_ATTRS.keys())
 PAIR_COLS = [
     "idx", "Date", "THR_dt", "T4_dt", "hora", "Hora THR", "Hora 4NM",
     "Pareja", "Pista", "Líder", "Seguidor",
-    "STAR", "Prev STAR", "Wake Cat", "Cat", "Prev Wake Cat", "Prev Cat", "Par RECAT",
-    "Sep THR", "Sep 4NM", "Alt THR", "Alt 4NM",
-] + INC_COLS + ["Sep operacional"]
+    "STAR", "Prev STAR", "Wake Cat", "Cat",
+    "Prev Wake Cat", "Prev Cat", "Par RECAT",
+    "Sep THR", "Sep 4NM",
+    "Alt THR", "Alt 4NM",
+] + INC_COLS + [
+    "Sep operacional THR",
+    "Sep operacional 4NM",
+]
 
 ARR_META = ["idx", "Date", "Vuelo", "Callsign", "Pista", "STAR", "Wake Cat", "Cat",
             "Hora llegada", "ATA", "hora", "Última"]
@@ -160,7 +165,9 @@ def build_data(results, distancias, key):
                 "Par RECAT": f"{nz(p.wake_recat_leader)} → {nz(p.wake_recat_follower)}",
                 "Sep THR": p.separation_thr, "Sep 4NM": p.separation_4mile,
                 "Alt THR": p.alt_thr, "Alt 4NM": p.alt_4mile,
-                "Sep operacional": bool(p.sep_op),
+                "Sep operacional THR": bool(p.sep_op_thr),
+                "Sep operacional 4NM": bool(p.sep_op_4mile),
+
             }
             for col, attr in INC_ATTRS.items():
                 row[col] = bool(getattr(p, attr))
@@ -191,7 +198,10 @@ def build_data(results, distancias, key):
     arr_cols = ARR_META + [f"ias_{d}" for d in distancias] + [f"t_{d}" for d in distancias]
     pairs_df = pd.DataFrame(p_rows, columns=PAIR_COLS)
     arr_df = pd.DataFrame(a_rows, columns=arr_cols)
-    for c in INC_COLS + ["Sep operacional"]:
+    for c in INC_COLS + [
+        "Sep operacional THR",
+        "Sep operacional 4NM",
+    ]:
         pairs_df[c] = pairs_df[c].astype(bool)
     arr_df["Última"] = arr_df["Última"].astype(bool)
 
@@ -280,8 +290,8 @@ with st.sidebar:
     date_to = st.date_input("Fecha fin", value=DEFAULT_DAY, key="date_to")
     sel_dists = st.multiselect(
         "Distancias a THR (NM)",
-        options=[1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20],
-        default=[2, 4, 6, 8],
+        options=[1, 2, 2.5, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        default=[1, 2, 2.5, 3, 4, 5, 6, 7, 8],
     )
     load_clicked = st.button("Cargar datos", type="primary", width="stretch")
 
@@ -325,10 +335,10 @@ with st.sidebar:
     sel_runways = st.multiselect("Pista", options=available_runways, default=available_runways)
 
     available_wake = sorted(set(arr_df["Wake Cat"]) | set(pairs_df["Wake Cat"]))
-    sel_wake = st.multiselect("Wake Cat (Callsign)", options=available_wake, default=available_wake)
+    sel_wake = st.multiselect("Wake Cat", options=available_wake, default=available_wake)
 
     available_cat = sorted(set(arr_df["Cat"]) | set(pairs_df["Cat"]))
-    sel_cat = st.multiselect("Cat (Callsign)", options=available_cat, default=available_cat)
+    sel_cat = st.multiselect("Cat", options=available_cat, default=available_cat)
 
     excl_fr = st.checkbox("Excluir frustradas en IAS / tiempos", value=True)
 
@@ -366,26 +376,49 @@ def tab_resumen():
     st.header("Resumen diario")
 
     landings = arr_g[arr_g["Última"]]
+
     n_land = len(landings)
     n_ga = int((~arr_g["Última"]).sum())
+
     n_pairs = len(pairs_f)
+
+    # Parejas con algún incumplimiento
     n_inc = int(pairs_f[INC_COLS].any(axis=1).sum())
-    n_op = int(pairs_f["Sep operacional"].sum())
+
+    # Separación operacional
+    n_op_thr = int(pairs_f["Sep operacional THR"].sum())
+    n_op_4nm = int(pairs_f["Sep operacional 4NM"].sum())
+    n_op_total = int(
+        pairs_f[["Sep operacional THR", "Sep operacional 4NM"]]
+        .any(axis=1)
+        .sum()
+    )
 
     k1, k2, k3, k4 = st.columns(4)
+
     k1.metric("🛬 Llegadas", f"{n_land:,}")
+
     n_fr_flights = arr_g.loc[~arr_g["Última"], "Callsign"].nunique()
+
     k2.metric(
-        "🔁 Frustradas", f"{n_ga:,}",
-        delta=f"{n_fr_flights} vuelo(s)" if n_ga else None, delta_color="off",
+        "🔁 Frustradas",
+        f"{n_ga:,}",
+        delta=f"{n_fr_flights} vuelo(s)" if n_ga else None,
+        delta_color="off",
     )
+
     k3.metric(
-        "⚠️ Parejas con incumplimiento", f"{n_inc:,}",
-        delta=f"{n_inc / n_pairs * 100:.1f}%" if n_pairs else "0%", delta_color="inverse",
+        "⚠️ Parejas con incumplimiento",
+        f"{n_inc:,}",
+        delta=f"{n_inc / n_pairs * 100:.1f}%" if n_pairs else "0%",
+        delta_color="inverse",
     )
+
     k4.metric(
-        "🔴 Separación operacional", f"{n_op:,}",
-        delta=f"{n_op / n_pairs * 100:.1f}%" if n_pairs else "0%", delta_color="inverse",
+        "🔴 Separación operacional",
+        f"{n_op_total:,}",
+        delta=f"THR: {n_op_thr} | 4NM: {n_op_4nm}",
+        delta_color="off",
     )
 
     st.markdown("---")
@@ -451,25 +484,45 @@ def tab_resumen():
 
     # ── Resumen por fecha ─────────────────────────────────────────────────────
     st.subheader("Resumen por fecha")
-    rows = []
-    for date in sorted(arr_g["Date"].unique()):
-        a_d = arr_g[arr_g["Date"] == date]
-        p_d = pairs_f[pairs_f["Date"] == date]
-        n = len(p_d)
-        n_i = int(p_d[INC_COLS].any(axis=1).sum())
-        n_o = int(p_d["Sep operacional"].sum())
-        rows.append({
-            "Fecha": str(date),
-            "Llegadas": int(a_d["Última"].sum()),
-            "Frustradas": int((~a_d["Última"]).sum()),
-            "Parejas": n,
-            "Con incumplimiento": n_i,
-            "% incumplimiento": f"{n_i / n * 100:.1f}%" if n else "0%",
-            "Sep. operacional": n_o,
-            "% sep. operacional": f"{n_o / n * 100:.1f}%" if n else "0%",
-        })
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
+rows = []
+
+for date in sorted(arr_g["Date"].unique()):
+
+    a_d = arr_g[arr_g["Date"] == date]
+    p_d = pairs_f[pairs_f["Date"] == date]
+
+    n = len(p_d)
+
+    n_i = int(p_d[INC_COLS].any(axis=1).sum())
+
+    n_op_thr = int(p_d["Sep operacional THR"].sum())
+    n_op_4nm = int(p_d["Sep operacional 4NM"].sum())
+
+    n_op = int(
+        p_d[
+            ["Sep operacional THR", "Sep operacional 4NM"]
+        ].any(axis=1).sum()
+    )
+
+    rows.append({
+        "Fecha": str(date),
+        "Llegadas": int(a_d["Última"].sum()),
+        "Frustradas": int((~a_d["Última"]).sum()),
+        "Parejas": n,
+        "Con incumplimiento": n_i,
+        "% incumplimiento": f"{n_i / n * 100:.1f}%" if n else "0%",
+        "Sep. operacional": n_op,
+        "Sep. op. THR": n_op_thr,
+        "Sep. op. 4NM": n_op_4nm,
+        "% sep. operacional": f"{n_op / n * 100:.1f}%" if n else "0%",
+    })
+
+st.dataframe(
+    pd.DataFrame(rows),
+    width="stretch",
+    hide_index=True,
+)
 
 def tab_tabla():
     st.header("Tablas")
@@ -494,11 +547,11 @@ def tab_tabla():
             ["Date", "Hora THR", "Pareja", "Pista", "Líder", "Seguidor", "STAR", "Prev STAR",
              "Wake Cat", "Cat", "Prev Wake Cat", "Prev Cat", "⚠️ Inc"]
             + INC_COLS
-            + ["Sep operacional", "Hora 4NM", "Sep 4NM", "Alt 4NM", "Sep THR", "Alt THR"]
+            + ["Sep operacional THR", "Sep operacional 4NM", "Hora 4NM", "Sep 4NM", "Alt 4NM", "Sep THR", "Alt THR"]
         )
 
         def _style(row):
-            if bool(row.get("Sep operacional")):
+            if row["Sep operacional THR"] or row["Sep operacional 4NM"]:
                 return ["background-color: #ffcccc"] * len(row)
             if bool(row.get("⚠️ Inc")):
                 return ["background-color: #ffe8e8"] * len(row)
@@ -562,8 +615,7 @@ def tab_separacion():
                 nbins=40, barmode="overlay", opacity=0.75,
                 labels={campo: f"{campo} (NM)", "count": "Nº parejas"}, title=titulo,
             )
-            fig.add_vline(x=RADAR_MIN_NM, line_dash="dash", line_color="red",
-                          annotation_text=f"{RADAR_MIN_NM} NM")
+            
             fig.update_layout(legend_title_text="Pista")
             st.plotly_chart(fig, width="stretch", key=f"sep_hist_{campo}")
 
@@ -578,7 +630,7 @@ def tab_separacion():
             labels={tcol: "Hora del líder", campo: f"{campo} (NM)"},
             title=titulo, hover_data=hover,
         )
-        fig.add_hline(y=RADAR_MIN_NM, line_dash="dash", line_color="red")
+
         fig.update_traces(marker=dict(size=6, opacity=0.7))
         fig.update_layout(legend_title_text="Pista", height=360)
         st.plotly_chart(fig, width="stretch", key=f"sep_time_{campo}")
@@ -593,8 +645,7 @@ def tab_separacion():
             hover_name="Pareja", hover_data=["Par RECAT", "Hora THR"],
             title="Separación 4 NM vs THR",
         )
-        fig.add_hline(y=RADAR_MIN_NM, line_dash="dash", line_color="red")
-        fig.add_vline(x=RADAR_MIN_NM, line_dash="dash", line_color="red")
+
         fig.update_layout(legend_title_text="Pista")
         st.plotly_chart(fig, width="stretch", key="sep_scatter")
     with c2:
@@ -624,7 +675,8 @@ def tab_incumplimientos():
 
     # ── Total por tipo ────────────────────────────────────────────────────────
     counts = {c: int(pairs_f[c].sum()) for c in INC_COLS}
-    counts["Sep operacional"] = int(pairs_f["Sep operacional"].sum())
+    counts["Sep operacional THR"] = int(pairs_f["Sep operacional THR"].sum())
+    counts["Sep operacional 4NM"] = int(pairs_f["Sep operacional 4NM"].sum())
     df_counts = pd.DataFrame(list(counts.items()), columns=["Tipo incumplimiento", "Nº casos"])
     df_counts = df_counts.sort_values("Nº casos", ascending=True)
     df_counts["% sobre total"] = (df_counts["Nº casos"] / total * 100).round(1)
@@ -674,16 +726,44 @@ def tab_incumplimientos():
 
     # ── Separación operacional ────────────────────────────────────────────────
     st.subheader("Separación operacional")
-    n_op = int(pairs_f["Sep operacional"].sum())
-    st.metric("Parejas con separación operacional", n_op,
-              delta=f"{n_op / total * 100:.1f}%", delta_color="inverse")
+    n_op_thr = int(pairs_f["Sep operacional THR"].sum())
+    n_op_4nm = int(pairs_f["Sep operacional 4NM"].sum())
 
-    df_op = pairs_f[pairs_f["Sep operacional"]]
+    n_op = int(
+        pairs_f[
+            ["Sep operacional THR", "Sep operacional 4NM"]
+        ].any(axis=1).sum()
+    )
+
+    st.metric(
+        "Parejas con separación operacional",
+        n_op,
+        delta=f"THR: {n_op_thr} | 4NM: {n_op_4nm}",
+        delta_color="off",
+    )
+
+    df_op = pairs_f[
+    pairs_f[
+        ["Sep operacional THR", "Sep operacional 4NM"]
+    ].any(axis=1)
+]
     if df_op.empty:
         st.success("No se han detectado separaciones operacionales.")
     else:
-        show = ["Date", "Hora THR", "Pareja", "Pista", "STAR", "Par RECAT",
-                "Sep 4NM", "Alt 4NM", "Sep THR", "Alt THR"] + INC_COLS
+        show = [
+    "Date",
+    "Hora THR",
+    "Pareja",
+    "Pista",
+    "STAR",
+    "Par RECAT",
+    "Sep operacional THR",
+    "Sep operacional 4NM",
+    "Sep 4NM",
+    "Alt 4NM",
+    "Sep THR",
+    "Alt THR",
+] + INC_COLS
         st.dataframe(df_op[show].reset_index(drop=True), width="stretch", hide_index=True)
 
 
@@ -829,12 +909,8 @@ def tab_trayectorias():
         st.info("Selecciona al menos una aproximación.")
         return
 
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        map_style = st.selectbox("Mapa base", ["open-street-map", "carto-positron", "carto-darkmatter"])
-    with c2:
-        by_sensor = st.checkbox("Mostrar records coloreados por sensor (ADS-B / Radar / interpolado)",
-                                value=False)
+    map_style = "open-street-map"
+    by_sensor = False
 
     arrs = {lab: DATA["arrivals"][label_idx[lab]] for lab in sel}
     palette = px.colors.qualitative.Plotly

@@ -39,7 +39,7 @@ loa_radar_check = loa_separation(radar_check)
 wake_loa_radar_check = wake_separation(loa_radar_check)
 
 #Calcular IAS a distintas distancias
-dists = [2, 4, 6, 8]
+dists = [1, 2, 2.5, 3, 4, 5, 6, 7, 8]
 ias_arrivals = get_ias(arrivals, dists, THR)
 time_to_thr_arr = get_time_to_thr(arrivals, dists, THR)
 

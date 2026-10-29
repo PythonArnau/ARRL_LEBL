@@ -5,6 +5,7 @@ class Pair:
     def __init__(self):
         self.pair: str = ""
         self.runway: str = ""
+        self.frustrada = False
 
         self.leader: str = ""
         self.star_leader: str = ""
@@ -31,7 +32,8 @@ class Pair:
         self.estela_4mile: bool = False
         self.loa_thr: bool = False
         self.loa_4mile: bool = False
-        self.sep_op: bool = False
+        self.sep_op_thr: bool = False
+        self.sep_op_4mile: bool = False
 
         
 
@@ -67,9 +69,9 @@ def LeaderFollower(arrivals, flights_dict, thresholds):
             p = Pair()
             p.runway = rwy
 
-            leader_id = f"{arr_leader.callsign}_FR{arr_leader.numfr}"
-            follower_id = f"{arr_follower.callsign}_FR{arr_follower.numfr}"
-            
+            leader_id = arr_leader.callsign
+            follower_id = arr_follower.callsign
+
             p.pair = f"{leader_id} - {follower_id}"
 
             p.leader = leader_id
@@ -79,8 +81,11 @@ def LeaderFollower(arrivals, flights_dict, thresholds):
 
             p.follower = follower_id
             p.star_follower = flight_follower.star
-            p.wake_follower = flight_follower.wake  
+            p.wake_follower = flight_follower.wake
             p.wake_recat_follower = flight_follower.wake_recat
+
+            # Indica si la pareja contiene alguna aproximación frustrada
+            p.frustrada = (arr_leader.numfr > 0) 
             
             if arr_leader.thr_record is not None:
                 tod_leader_thr = arr_leader.thr_record.time
@@ -179,26 +184,28 @@ def radar_sparation(pairs):
             pair.radar_thr = True
 
             if pair.alt_thr < 1000:
-                pair.sep_op = True
+                pair.sep_op_thr = True
             
 
         if pair.separation_4mile is not None and pair.separation_4mile < 2.4:
             pair.radar_4mile = True
 
             if pair.alt_4mile < 1000:
-                pair.sep_op = True
+                pair.sep_op_4mile = True
     return pairs
 
 def loa_separation(pairs):
-    #Comprobar LoA por cada pareja en THR y 4NM
+    #Comprobar LoA por cada pareja en THR y 4NM. CAMBIAR
+    e = 0.1
+
     for pair in pairs:
         lead_recat = pair.wake_recat_leader
         follow_recat = pair.wake_recat_follower
 
         if lead_recat in ("M+", "M-") and follow_recat in ("M+", "M-"):
-            if pair.separation_thr is not None and pair.separation_thr >= 2.5:
-                if pair.separation_4mile is not None and pair.separation_4mile < 2.9:
-                    pair.loa_4mile = True 
+            if pair.separation_4mile is not None and pair.separation_4mile < 2.9:
+                pair.loa_4mile = True 
+
     return pairs
 
 def wake_separation(pairs):
@@ -216,12 +223,12 @@ def wake_separation(pairs):
             if pair.separation_thr is not None and pair.separation_thr < (separation-e):
                 pair.estela_thr = True
                 if pair.alt_thr < 1000:
-                    pair.sep_op = True
+                    pair.sep_op_thr = True
 
             if pair.separation_4mile is not None and pair.separation_4mile < (separation-e):
                 pair.estela_4mile = True
-                if pair.alt_thr < 1000:
-                    pair.sep_op = True
+                if pair.alt_4mile < 1000:
+                    pair.sep_op_4mile = True
     
     return pairs
 
@@ -279,6 +286,7 @@ def export_pairs_to_excel(pairs, output_filename="Separaciones_LEBL.xlsx"):
         row = {
             "Pareja": p.pair,
             "Pista": p.runway,
+            "Frustrada": "Sí" if p.frustrada else "No",
 
             "Líder": p.leader,
             "STAR Líder": p.star_leader,
@@ -303,11 +311,13 @@ def export_pairs_to_excel(pairs, output_filename="Separaciones_LEBL.xlsx"):
             "Sep. THR (NM)": round(p.separation_thr, 3) if p.separation_thr is not None else "N/A",
             "Sep. Vertical THR (ft)": round(p.alt_thr, 0) if p.alt_thr is not None else "N/A",
             "Incumplimiento Radar THR": "Sí" if p.radar_thr else "No",
-            "Incumplimiento LoA THR": "Sí" if p.loa_thr else "No",
+            #"Incumplimiento LoA THR": "Sí" if p.loa_thr else "No",
             "Incumplimiento Estela THR": "Sí" if p.estela_thr else "No",
 
             # Resultado global
-            "Separación Operacional": "Sí" if p.sep_op else "No",
+            "Separación Operacional THR": "Sí" if p.sep_op_thr else "No",
+            "Separación Operacional 4NM": "Sí" if p.sep_op_4mile else "No",
+
         }
 
         data.append(row)
