@@ -1,6 +1,7 @@
 import mysql.connector
 from dotenv import load_dotenv
 import os
+import re, io, csv
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
@@ -77,8 +78,224 @@ class Arrival:
         self.cum_dist: list = []
         self.ias_dict = {}
         self.time_to_thr_dict = {}
+        self.gs_dict = {}
 
 
+def _convert_sql_value(value):
+    value = value.strip()
+
+    if value.upper() == "NULL":
+        return None
+
+    if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
+        value = value[1:-1]
+
+    return value
+
+def _split_sql_rows(values_block):
+    """
+    Splits
+
+    (...),(...),(...)
+
+    into
+
+    ["...", "...", "..."]
+
+    respecting quoted strings.
+    """
+
+    rows = []
+
+    depth = 0
+    start = None
+    in_string = False
+    escape = False
+
+    for i, c in enumerate(values_block):
+
+        if escape:
+            escape = False
+            continue
+
+        if c == "\\":
+            escape = True
+            continue
+
+        if c == "'":
+            in_string = not in_string
+
+        if in_string:
+            continue
+
+        if c == "(":
+            if depth == 0:
+                start = i + 1
+            depth += 1
+
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                rows.append(values_block[start:i])
+
+    return rows
+
+
+def _parse_sql_row(row_text):
+    """
+    Uses Python CSV parser because SQL uses comma-separated values.
+    """
+
+    reader = csv.reader(
+        io.StringIO(row_text),
+        delimiter=',',
+        quotechar="'",
+        escapechar='\\'
+    )
+
+    row = next(reader)
+
+    return [_convert_sql_value(x) for x in row]
+
+def parse_datetime(s):
+    s = s.strip("'")
+
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+    ):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            pass
+
+    raise ValueError(f"Cannot parse datetime: {s}")
+
+def parse_datetime_2(s):
+
+    if s is None:
+        return None
+
+    s = str(s).strip()          # elimina espacios
+    s = s.strip("'")            # elimina comillas simples
+    s = s.strip('"')            # por si acaso
+
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+    ):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            pass
+
+    raise ValueError(f"Cannot parse datetime: {repr(s)}")
+
+def read_sql(sql_file, fecha):
+
+    fecha_inicio = datetime.combine(fecha, datetime.min.time())
+    fecha_fin = fecha_inicio + timedelta(days=1)
+
+    vuelos = {}
+
+    with open(sql_file, encoding="utf8") as f:
+        sql = f.read()
+
+    inserts = re.findall(
+        r"INSERT INTO\s+`?arribades`?.*?VALUES\s*(.*?);",
+        sql,
+        flags=re.S | re.I,
+    )
+
+    print("INSERT statements:", len(inserts))
+
+    for block in inserts:
+
+        rows = _split_sql_rows(block)
+
+        for row_txt in rows:
+
+            values = _parse_sql_row(row_txt)
+
+            row = {
+                "Callsign": values[0],
+                "Origen": values[1],
+                "Desti": values[2],
+                "HoraARR": values[3],
+                "HoraTHR": values[4],
+                "RutaSACTA": values[5],
+                "Aeronau": values[6],
+                "Estela": values[7],
+                "EstelaRecat": values[8],
+                "STAR": values[9],
+                "PistaARR": values[10],
+                "ToD": values[11],
+                "X": float(values[12]),
+                "Y": float(values[13]),
+                "FL": float(values[14]) if values[14] is not None else 0.0,
+                "ALT": float(values[15]) if values[15] is not None else 0.0,
+                "BP": float(values[16]) if values[16] is not None else 0.0,
+                "GS": float(values[17]) if values[17] is not None else 0.0,
+                "IAS": float(values[18]) if values[18] is not None else 0.0,
+                "lat": float(values[19]) if values[19] is not None else 0.0,
+                "lon": float(values[20]) if values[20] is not None else 0.0,
+                "Sensor": values[21],
+                "Cont": values[22],
+                "NumFR": int(values[23]) if values[23] is not None else 0,}
+
+            hora_arr = parse_datetime(row["HoraARR"])
+
+            if not (fecha_inicio <= hora_arr < fecha_fin):
+                continue
+
+            key = (row["Callsign"], row["HoraARR"])
+
+            if key not in vuelos:
+
+                flight = Flight()
+
+                flight.callsign = row["Callsign"]
+                flight.departure = row["Origen"]
+                flight.arrival = row["Desti"]
+                flight.arr_hour = row["HoraARR"]
+                flight.thr_hour = row["HoraTHR"]
+                flight.route = row["RutaSACTA"]
+                flight.aircraft = row["Aeronau"]
+                flight.wake = row["Estela"]
+                flight.wake_recat = row["EstelaRecat"]
+                flight.star = row["STAR"]
+                flight.arr_runway = row["PistaARR"]
+
+                _, thr = FlightRecord.date_to_ToD(row["HoraTHR"])
+                flight.thr_time = thr
+
+                vuelos[key] = flight
+
+            rec = FlightRecord()
+
+            rec.pos_x = row["X"]
+            rec.pos_y = row["Y"]
+            rec.fl = row["FL"]
+            rec.alt = row["ALT"]
+            rec.bp = row["BP"]
+            rec.gs = row["GS"]
+            rec.ias = row["IAS"]
+            rec.lat = row["lat"]
+            rec.lon = row["lon"]
+            rec.sensor = row["Sensor"]
+            rec.cont = row["Cont"]
+            rec.numfr = row["NumFR"]
+
+            day, tod = FlightRecord.date_to_ToD(row["ToD"])
+
+            rec.day = day
+            rec.time = tod
+
+            vuelos[key].records.append(rec)
+
+    print("Flights:", len(vuelos))
+
+    return vuelos
 
 def read_bbdd(fecha):
     load_dotenv()
@@ -160,6 +377,79 @@ def read_bbdd(fecha):
     print(f"Número de vuelos creados: {len(vuelos)}")
     return vuelos
 
+import re
+import csv
+import io
+from collections import defaultdict
+from datetime import datetime
+
+def read_frustrades(sql_file):
+    """
+    Devuelve un diccionario:
+        (Callsign, HoraFR) -> ALPI
+    """
+
+    frustrades = defaultdict(list)
+
+    with open(sql_file, encoding="utf8") as f:
+        sql = f.read()
+
+    patron = re.compile(
+        r"INSERT INTO\s+`frustrades`\s*\((.*?)\)\s*VALUES\s*(.*?);",
+        re.S
+    )
+
+    for columnas_txt, valores_txt in patron.findall(sql):
+
+        columnas = [
+            c.strip().replace("`", "")
+            for c in columnas_txt.split(",")
+        ]
+
+        filas = _split_sql_rows(valores_txt)
+
+        for fila in filas:
+
+            valores = next(csv.reader(
+                io.StringIO(fila),
+                delimiter=',',
+                quotechar="'",
+                escapechar='\\'
+            ))
+
+            row = dict(zip(columnas, valores))
+
+            callsign = row["Callsign"]
+            hora_fr = parse_datetime_2(row["HoraFR"])            
+            tipo = row["Tipus"].split(":")[0]
+
+            frustrades[callsign].append((hora_fr, tipo))
+
+    return frustrades
+
+def get_tipo_frustrada(callsign, hora_arr, frustrades):
+
+    if callsign not in frustrades:
+        return None
+
+    hora_arr = parse_datetime(hora_arr)
+
+    mejor_tipo = None
+    mejor_dif = timedelta.max
+
+    for hora_fr, tipo in frustrades[callsign]:
+
+        # Solo frustradas anteriores a la llegada
+        if hora_fr > hora_arr:
+            continue
+
+        dif = hora_arr - hora_fr
+
+        if dif < mejor_dif:
+            mejor_dif = dif
+            mejor_tipo = tipo
+
+    return mejor_tipo
 
 def get_arrivals(flights):
     arrivals = []
@@ -207,13 +497,13 @@ def interpolate_records(flights):
     if len(records) < 2:
         return list(records)
     
-    #Interpolar IAS que tienen valor 0.0
-    ias_originales = [rec.ias if rec.ias != 0.0 else np.nan for rec in records]
-    ias_filtradas = pd.Series(ias_originales).interpolate(method='linear').bfill().ffill().values
+    #Interpolar IAS y GS que tienen valor 0.0
+    for attr in ("ias", "gs"):
+        originales = [getattr(rec, attr) if getattr(rec, attr) != 0.0 else np.nan for rec in records]
+        filtradas = pd.Series(originales).interpolate(method='linear').bfill().ffill().values
+        for rec, valor in zip(records, filtradas):
+            setattr(rec, attr, float(valor))
 
-
-    for idx, nueva_ias in enumerate(ias_filtradas):
-        records[idx].ias = float(nueva_ias)
 
     #Crear nuevos records interpolados
     new_record_list = []
@@ -231,6 +521,7 @@ def interpolate_records(flights):
             dy_per_sec = (r_next.pos_y - r.pos_y)/diff
             dh_per_sec = (r_next.alt - r.alt)/diff
             dias_per_sec = (r_next.ias - r.ias)/diff
+            dgs_per_sec = (r_next.gs - r.gs)/diff
 
             for s in range(1, diff):
                 new_rec = FlightRecord()
@@ -239,6 +530,7 @@ def interpolate_records(flights):
                 new_rec.pos_y = r.pos_y + (dy_per_sec*s)
                 new_rec.alt = r.alt + (dh_per_sec*s)
                 new_rec.ias = r.ias + (dias_per_sec*s)
+                new_rec.gs = r.gs + (dgs_per_sec*s)
 
                 new_rec.time = r.time + s
                 new_rec.sensor = "INTERPOLATED"

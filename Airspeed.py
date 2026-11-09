@@ -1,4 +1,5 @@
 from Distancias import cumulative_dist, dist_to_thr
+from Fligths import get_tipo_frustrada
 import pandas as pd
 
 def all_cum_dist(arrivals, thresholds):
@@ -16,7 +17,7 @@ def all_cum_dist(arrivals, thresholds):
         arr.cum_dist = dists
 
 def get_ias(arrivals, distances, thrs):
-    #Busca que record se encuentra la distancia seleccionada. Devuelve la IAS de ese record
+    #Busca que record se encuentra la distancia seleccionada. Devuelve la IAS y GS de ese record
     # Distances: lista de distancias al umbral
 
     #Calculamos todas las distancias acumuladas
@@ -25,13 +26,21 @@ def get_ias(arrivals, distances, thrs):
     for arr in arrivals:
         
         arr.ias_dict = {}
+        arr.gs_dict = {}
 
         for dist in distances:
             idx = min(range(len(arr.cum_dist)), key=lambda i: abs(arr.cum_dist[i] - dist))
             ias = arr.records[idx].ias
+            gs = arr.records[idx].gs
             arr.ias_dict[dist] = ias
+            arr.gs_dict[dist] = gs
+
+            if arr.thr_record is not None:
+                arr.ias_dict["THR"] = arr.thr_record.ias
+                arr.gs_dict["THR"] = arr.thr_record.gs
     
     return arrivals
+
 
 def get_time_to_thr(arrivals, distances, thrs):
     #Busca el record a la distancia seleccionada. Calcula el tiempo (s) que tiene hasta llegar a la THR.
@@ -61,7 +70,7 @@ def get_time_to_thr(arrivals, distances, thrs):
     return arrivals
 
 def export_ias_to_excel(arrivals, distances,
-                         output_filename):
+                         output_filename, tipos_frustrada = None):
     """
     Exporta la IAS de cada llegada para las distancias solicitadas.
 
@@ -72,19 +81,35 @@ def export_ias_to_excel(arrivals, distances,
     output_filename : str
     """
 
+    if tipos_frustrada is None:
+        tipos_frustrada = {}
+
     data = []
 
     for arr in arrivals:
 
+        if arr.numfr > 0:
+            tipo = get_tipo_frustrada(arr.callsign, arr.arr_hour, tipos_frustrada)
+    
+            if tipo:
+                frustrada_txt = f"Sí - {tipo}"
+            else:
+                frustrada_txt = "Sí"
+        else:
+            frustrada_txt = "No"
+
         row = {
-            "Vuelo": {arr.callsign},
-            "Frustrada": "Sí" if arr.numfr > 0 else "No",
+            "Vuelo": arr.callsign,
+            "Frustrada": frustrada_txt,
             "Pista": arr.runway,
             "Hora llegada": arr.arr_hour,
         }
 
+        row["IAS THR"] = arr.ias_dict.get("THR")
+        row["GS THR"] = arr.gs_dict.get("THR")
         for dist in distances:
             row[f"IAS {dist} NM"] = arr.ias_dict.get(dist)
+            row[f"GS {dist} NM"] = arr.gs_dict.get(dist)
 
         data.append(row)
 
@@ -99,7 +124,7 @@ def export_ias_to_excel(arrivals, distances,
         print(f"Error al exportar a Excel: {e}")
 
 
-def export_time_to_thr_excel(arrivals, distances, output_filename):
+def export_time_to_thr_excel(arrivals, distances, output_filename, tipos_frustrada=None):
     """
     Exporta el tiempo restante hasta la THR para cada llegada y distancia.
 
@@ -109,14 +134,26 @@ def export_time_to_thr_excel(arrivals, distances, output_filename):
     distances : list[float]
     output_filename : str
     """
+    if tipos_frustrada is None:
+        tipos_frustrada = {}
 
     data = []
 
     for arr in arrivals:
+        
+        if arr.numfr > 0:
+            tipo = get_tipo_frustrada(arr.callsign, arr.arr_hour, tipos_frustrada)
+    
+            if tipo:
+                frustrada_txt = f"Sí - {tipo}"
+            else:
+                frustrada_txt = "Sí"
+        else:
+            frustrada_txt = "No"
 
         row = {
             "Vuelo": arr.callsign,
-            "Frustrada": "Sí" if arr.numfr > 0 else "No",
+            "Frustrada": frustrada_txt,
             "Pista": arr.runway,
             "Hora llegada": arr.arr_hour
         }

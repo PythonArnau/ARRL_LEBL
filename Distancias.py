@@ -1,11 +1,14 @@
 import math
 import pandas as pd
+from Fligths import get_tipo_frustrada
 
 class Pair:
     def __init__(self):
         self.pair: str = ""
         self.runway: str = ""
-        self.frustrada = False
+        self.frustrada_leader = False
+        self.frustrada_follower = False
+        self.arr_hour_follower = ""
 
         self.leader: str = ""
         self.star_leader: str = ""
@@ -38,27 +41,44 @@ class Pair:
         
 
 
+def marcar_frustradas(arr_list):
+    """Todas las arrivals de un callsign salvo la última (por hora de umbral) son frustradas."""
+    def t(a):
+        return a.thr_record.time if a.thr_record is not None else a.thr_time
+
+    por_callsign = {}
+    for a in arr_list:
+        por_callsign.setdefault(a.callsign, []).append(a)
+
+    for lista in por_callsign.values():
+        lista.sort(key=t)
+        for a in lista[:-1]:
+            a.last_arr = False
+
 
 def LeaderFollower(arrivals, flights_dict, thresholds):
     runways = {}
     pairs = []
 
     for arr in arrivals:
-        rwy = arr.runway
-        if rwy not in runways:
-            runways[rwy] = []
-        runways[rwy].append(arr)
+        runways.setdefault(arr.runway, []).append(arr)
 
     for rwy, arr_list in runways.items():
 
-        arr_list_sort = sorted(arr_list, key=lambda x: x.thr_time)
-
-        #Marcar en que momento el veulo cruza el umbral y la milla 4
+        # Marcar en qué momento cruza el umbral y la milla 4
         thr_xy = thresholds.get(rwy) if thresholds else None
         if thr_xy is not None:
-            for arr in arr_list_sort:
+            for arr in arr_list:
                 marcar_records(arr, thr_xy)
 
+        # Detectar frustradas (independiente de NumFR)
+        marcar_frustradas(arr_list)
+
+        # Ordenar por el instante real de paso por umbral
+        arr_list_sort = sorted(
+            arr_list,
+            key=lambda x: x.thr_record.time if x.thr_record is not None else x.thr_time
+        )
         for i in range(len(arr_list_sort)-1):
             arr_leader = arr_list_sort[i]
             arr_follower = arr_list_sort[i+1]
@@ -71,7 +91,7 @@ def LeaderFollower(arrivals, flights_dict, thresholds):
 
             leader_id = arr_leader.callsign
             follower_id = arr_follower.callsign
-
+            
             p.pair = f"{leader_id} - {follower_id}"
 
             p.leader = leader_id
@@ -80,12 +100,14 @@ def LeaderFollower(arrivals, flights_dict, thresholds):
             p.wake_recat_leader = flight_leader.wake_recat
 
             p.follower = follower_id
+            p.arr_hour_follower = flight_follower.arr_hour
             p.star_follower = flight_follower.star
             p.wake_follower = flight_follower.wake
             p.wake_recat_follower = flight_follower.wake_recat
 
             # Indica si la pareja contiene alguna aproximación frustrada
-            p.frustrada = (arr_leader.numfr > 0) 
+            p.frustrada_leader = not arr_leader.last_arr
+            p.frustrada_follower = not arr_follower.last_arr
             
             if arr_leader.thr_record is not None:
                 tod_leader_thr = arr_leader.thr_record.time
@@ -180,33 +202,88 @@ def tod_to_hhmmss(tod):
 def radar_sparation(pairs):
     #Comprobar separación radar por cada pareja en THR y 4NM
     for pair in pairs:
-        if pair.separation_thr is not None and pair.separation_thr < 2.4:
-            pair.radar_thr = True
+        if pair.estela_thr is False:
+            if pair.separation_thr is not None and pair.separation_thr < 2.4:
+                pair.radar_thr = True
 
-            if pair.alt_thr < 1000:
-                pair.sep_op_thr = True
+                if pair.alt_thr < 1000:
+                    pair.sep_op_thr = True
             
+        if pair.estela_4mile is False:
+            if pair.separation_4mile is not None and pair.separation_4mile < 2.4:
+                pair.radar_4mile = True
 
-        if pair.separation_4mile is not None and pair.separation_4mile < 2.4:
-            pair.radar_4mile = True
-
-            if pair.alt_4mile < 1000:
-                pair.sep_op_4mile = True
+                if pair.alt_4mile < 1000:
+                    pair.sep_op_4mile = True
     return pairs
 
 def loa_separation(pairs):
-    #Comprobar LoA por cada pareja en THR y 4NM. CAMBIAR
-    e = 0.1
+    #Comprobar LoA por cada pareja en THR y 4NM. 
 
     for pair in pairs:
         lead_recat = pair.wake_recat_leader
         follow_recat = pair.wake_recat_follower
+        
+        sep = get_loa_sep_4mile(lead_recat, follow_recat)
+        sep_thr = get_loa_sep_thr(lead_recat, follow_recat)
 
-        if lead_recat in ("M+", "M-") and follow_recat in ("M+", "M-"):
-            if pair.separation_4mile is not None and pair.separation_4mile < 2.9:
-                pair.loa_4mile = True 
+        if pair.radar_4mile is False or pair.estela_4mile is False:
+            if sep is True:
+                if pair.separation_4mile is not None and pair.separation_4mile < 2.9:
+                    pair.loa_4mile = True 
+        
+        if pair.radar_thr is False or pair.estela_thr is False:
+            if sep_thr is True:
+                if pair.separation_thr is not None and pair.separation_thr < 2.9:
+                    pair.loa_thr = True
 
     return pairs
+
+def get_loa_sep_4mile(wake_lead, wake_follow):
+    # Devuelve True si hay que tener en cuenta LoA, False en caso contrario
+
+    if wake_lead == "M+":
+        if wake_follow == "M+": return True
+        elif wake_follow == "M-": return True
+        elif wake_follow == "J": return True
+        elif wake_follow == "H+": return True
+        elif wake_follow == "H-": return True
+
+    elif wake_lead == "M-":
+        if wake_follow == "M+": return True
+        elif wake_follow == "M-": return True
+        elif wake_follow == "J": return True
+        elif wake_follow == "H+": return True
+        elif wake_follow == "H-": return True
+
+    elif wake_lead == "L+":
+        if wake_follow == "J": return True
+        elif wake_follow == "H+": return True
+        elif wake_follow == "H-": return True
+        elif wake_follow == "M+": return True
+        elif wake_follow == "M-": return True
+
+    return False
+
+def get_loa_sep_thr(wake_lead, wake_follow):
+    # Devuelve separación LoA en THR. Devuelve None si no aplica.
+
+    if wake_lead == "H+":
+        if wake_follow == "J": return True
+
+    elif wake_lead == "H-":
+        if wake_follow == "J": return True
+        elif wake_follow == "H+": return True
+
+    elif wake_lead == "L+":
+        if wake_follow == "J": return True
+        elif wake_follow == "H+": return True
+        elif wake_follow == "H-": return True
+        elif wake_follow == "M+": return True
+        elif wake_follow == "M-": return True
+
+    return False
+
 
 def wake_separation(pairs):
     #Comprobar si se cumple separacion por estela
@@ -245,48 +322,60 @@ def get_wake_sep(wake_lead, wake_follow):
         elif wake_follow == "L+": return 8
 
     elif wake_lead == "H+":
-        if wake_follow == "J": return 3
-        elif wake_follow == "H+": return 3
+        if wake_follow == "H+": return 3
         elif wake_follow == "H-": return 4
         elif wake_follow == "M+": return 4
         elif wake_follow == "M-": return 5
         elif wake_follow == "L+": return 7
 
     elif wake_lead == "H-":
-        if wake_follow == "J": return 3
-        elif wake_follow == "H+": return 3
-        elif wake_follow == "H-": return 3
+        if wake_follow == "H-": return 3
         elif wake_follow == "M+": return 3
         elif wake_follow == "M-": return 4
         elif wake_follow == "L+": return 6
     
     elif wake_lead == "M+":
         if wake_follow == "L+": return 5
-        else: return None
 
     elif wake_lead == "M-":
         if wake_follow == "L+": return 4
-        else: return None
 
     elif wake_lead == "L+":
-        return 3
+        if wake_follow == "L+": return 3
+    
+    else: return None
     
     
        
 
-def export_pairs_to_excel(pairs, output_filename="Separaciones_LEBL.xlsx"):
+def export_pairs_to_excel(pairs, output_filename="Separaciones_LEBL.xlsx", tipos_frustrada=None):
 
     if not pairs:
         print("No hay parejas para exportar.")
         return
 
+    if tipos_frustrada is None:
+        tipos_frustrada = {}
+
     data = []
 
     for p in pairs:
+        if p.frustrada_follower:
+            tipo = tipos_frustrada.get(p.follower)
+            tipo = get_tipo_frustrada(p.follower, p.arr_hour_follower, tipos_frustrada)
+
+            
+            if tipo:
+                frustrada_txt = f"Sí - {tipo}"
+            else:
+                frustrada_txt = "Sí"
+        else:
+            frustrada_txt = "No"
+
         row = {
             "Pareja": p.pair,
             "Pista": p.runway,
-            "Frustrada": "Sí" if p.frustrada else "No",
+            "Frustrada Seguidor": frustrada_txt,
 
             "Líder": p.leader,
             "STAR Líder": p.star_leader,
@@ -311,7 +400,7 @@ def export_pairs_to_excel(pairs, output_filename="Separaciones_LEBL.xlsx"):
             "Sep. THR (NM)": round(p.separation_thr, 3) if p.separation_thr is not None else "N/A",
             "Sep. Vertical THR (ft)": round(p.alt_thr, 0) if p.alt_thr is not None else "N/A",
             "Incumplimiento Radar THR": "Sí" if p.radar_thr else "No",
-            #"Incumplimiento LoA THR": "Sí" if p.loa_thr else "No",
+            "Incumplimiento LoA THR": "Sí" if p.loa_thr else "No",
             "Incumplimiento Estela THR": "Sí" if p.estela_thr else "No",
 
             # Resultado global
