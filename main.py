@@ -20,7 +20,7 @@ THR = {
     "LEBL-20": THR_20,
 }
 
-fecha = date(2025, 1, 14)
+fecha = date(2025, 1, 13)
 fecha_str = fecha.strftime("%d_%m_%Y")
 
 #Leer vuelos y separar en funcion si hay frustradas
