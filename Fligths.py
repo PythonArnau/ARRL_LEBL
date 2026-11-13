@@ -65,6 +65,7 @@ class Arrival:
         self.last_arr: bool = True
         self.thr_time: int = 0
         self.arr_hour: str = ""
+        self.aircraft: str = ""
 
         self.records: list = []
 
@@ -475,6 +476,7 @@ def get_arrivals(flights):
             arr.arr_hour = flight.arr_hour
             arr.runway = flight.arr_runway
             arr.numfr = fr_index
+            arr.aircraft = flight.aircraft
             arr.last_arr = (i == len(order) - 1)
             arr.thr_time = flight.thr_time
             arr.records = rec_for_arr[fr_index]

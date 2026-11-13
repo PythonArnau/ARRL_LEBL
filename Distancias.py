@@ -14,12 +14,14 @@ class Pair:
         self.star_leader: str = ""
         self.wake_leader: str = ""
         self.wake_recat_leader: str = ""
+        self.aircraft_leader: str = ""
 
 
         self.follower: str = ""
         self.star_follower: str = ""
         self.wake_follower: str = ""
         self.wake_recat_follower: str = ""
+        self.aircraft_follower: str = ""
 
         #Separaciones
         self.separation_thr: float = None
@@ -381,11 +383,13 @@ def export_pairs_to_excel(pairs, output_filename="Separaciones_LEBL.xlsx", tipos
             "STAR Líder": p.star_leader,
             "Estela Líder": p.wake_leader,
             "RECAT Líder": p.wake_recat_leader,
+            "Tipo Aeronave Líder": p.aircraft_leader,
 
             "Seguidor": p.follower,
             "STAR Seguidor": p.star_follower,
             "Estela Seguidor": p.wake_follower,
             "RECAT Seguidor": p.wake_recat_follower,
+            "Tipo Aeronave Seguidor": p.aircraft_follower,
 
             # 4 NM
             "Hora 4NM": tod_to_hhmmss(p.tod_4mile),

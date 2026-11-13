@@ -102,6 +102,7 @@ def export_ias_to_excel(arrivals, distances,
             "Vuelo": arr.callsign,
             "Frustrada": frustrada_txt,
             "Pista": arr.runway,
+            "Tipo Aeronave": arr.aircraft,
             "Hora llegada": arr.arr_hour,
         }
 
@@ -155,6 +156,7 @@ def export_time_to_thr_excel(arrivals, distances, output_filename, tipos_frustra
             "Vuelo": arr.callsign,
             "Frustrada": frustrada_txt,
             "Pista": arr.runway,
+            "Tipo Aeronave": arr.aircraft,
             "Hora llegada": arr.arr_hour
         }
 
