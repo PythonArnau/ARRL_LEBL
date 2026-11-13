@@ -296,22 +296,6 @@ def xlsx_button(label, kind, idx, objs, file_name, key):
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers: ventana pico
 # ──────────────────────────────────────────────────────────────────────────────
-def find_peak_window(ata_series: pd.Series, window_min: int = 60):
-    """Devuelve (inicio_min, fin_min, nº) de la ventana de 60 min con más llegadas."""
-    valid = ata_series.dropna()
-    if valid.empty:
-        return None, None, 0
-    mins = valid.dt.hour * 60 + valid.dt.minute + valid.dt.second / 60.0
-    lo = int(mins.min())
-    hi = int(mins.max())
-    best_start, best_count = lo, 0
-    for start in range(lo, max(lo + 1, hi - window_min + 2)):
-        cnt = int(((mins >= start) & (mins < start + window_min)).sum())
-        if cnt > best_count:
-            best_count = cnt
-            best_start = start
-    return best_start, best_start + window_min, best_count
-
 
 def hour_overlaps_window(h: int, w_start, w_end) -> bool:
     if w_start is None:
@@ -477,35 +461,136 @@ def tab_resumen():
 
     st.markdown("---")
 
-    # ── Llegadas por hora con ventana pico ────────────────────────────────────
-    hours = list(range(24))
-    hour_counts = landings.groupby("hora").size().reindex(hours, fill_value=0)
+    # ── Análisis temporal de llegadas ────────────────────────────────────────
 
-    single_day = landings["Date"].nunique() == 1
-    w_start, w_end, w_count = find_peak_window(landings["ATA"]) if single_day else (None, None, 0)
-    colors = ["#FF6B35" if hour_overlaps_window(h, w_start, w_end) else "#4C72B0" for h in hours]
+    modo = st.radio(
+        "Modo de análisis",
+        ["Intervalos fijos", "Ventana pico"],
+        horizontal=True,
+    )
 
-    if single_day and w_start is not None:
-        wh_s = f"{w_start // 60:02d}:{w_start % 60:02d}"
-        wh_e = f"{w_end // 60:02d}:{w_end % 60:02d}"
-        title_extra = f"<br><sup style='color:#FF6B35'>Ventana pico: {wh_s}–{wh_e} ({w_count} llegadas)</sup>"
-    else:
-        title_extra = ""
+    intervalo = st.selectbox(
+        "Resolución temporal",
+        [60, 30, 15],
+        format_func=lambda x: f"{x} min"
+    )
+    # Selección de día
+    dias = sorted(landings["Date"].unique())
 
-    fig_hourly = go.Figure(
-        go.Bar(
-            x=hours, y=hour_counts.values, marker_color=colors,
-            text=hour_counts.values, textposition="outside",
-            hovertemplate="Hora %{x}:00<br>%{y} llegadas<extra></extra>",
+    if len(dias) > 1:
+        dia_sel = st.selectbox(
+            "Día",
+            dias,
+            format_func=lambda d: d.strftime("%d/%m/%Y")
         )
-    )
-    fig_hourly.update_layout(
-        title=f"Llegadas por hora{title_extra}",
-        xaxis=dict(title="Hora", tickmode="linear", tick0=0, dtick=1),
-        yaxis=dict(title="Nº llegadas"),
-        showlegend=False, height=380,
-    )
-    st.plotly_chart(fig_hourly, width="stretch", key="res_hourly")
+    else:
+        dia_sel = dias[0]
+
+    landings_day = landings[
+        landings["Date"] == dia_sel
+    ].copy()
+
+    if modo == "Intervalos fijos":
+
+        landings_tmp = landings_day.copy()
+
+        landings_tmp["bloque"] = (
+            landings_tmp["ATA"]
+            .dt.floor(f"{intervalo}min")
+        )
+
+        counts = (
+            landings_tmp
+            .groupby("bloque")
+            .size()
+            .reset_index(name="Llegadas")
+        )
+
+        fig_hourly = px.bar(
+            counts,
+            x="bloque",
+            y="Llegadas",
+            text="Llegadas",
+            title=f"Llegadas cada {intervalo} minutos ({dia_sel.strftime('%d/%m/%Y')})"
+        )
+
+        fig_hourly.update_layout(
+            xaxis_title="Hora",
+            yaxis_title="Llegadas",
+        )
+
+        st.plotly_chart(
+            fig_hourly,
+            width="stretch",
+            key="res_hourly"
+        )
+
+    else:
+
+        dias = sorted(landings_day["Date"].unique())
+
+        # Selector de día
+        landings_day = landings[
+            landings["Date"] == dia_sel
+        ].copy()
+
+        # Intervalo fijo
+        landings_day["bloque"] = (
+            landings_day["ATA"]
+            .dt.floor(f"{intervalo}min")
+        )
+
+        counts = (
+            landings_day
+            .groupby("bloque")
+            .size()
+            .reset_index(name="Llegadas")
+            .sort_values("bloque")
+        )
+
+        if counts.empty:
+            st.info("No hay datos para el día seleccionado.")
+            return
+
+        peak = counts.loc[counts["Llegadas"].idxmax()]
+
+        inicio = peak["bloque"]
+        fin = inicio + pd.Timedelta(minutes=intervalo)
+
+        st.metric(
+            "Intervalo pico",
+            f"{int(peak['Llegadas'])} llegadas",
+            delta=f"{inicio.strftime('%H:%M')} - {fin.strftime('%H:%M')}"
+        )
+
+        colors = [
+            "#FF6B35" if t == inicio else "#4C72B0"
+            for t in counts["bloque"]
+        ]
+
+        fig_hourly = px.bar(
+            counts,
+            x="bloque",
+            y="Llegadas",
+            text="Llegadas",
+            title=f"Llegadas cada {intervalo} minutos ({dia_sel.strftime('%d/%m/%Y')})"
+        )
+
+        fig_hourly.update_traces(
+            marker_color=colors,
+            textposition="outside"
+        )
+
+        fig_hourly.update_layout(
+            xaxis_title="Hora UTC",
+            yaxis_title="Llegadas"
+        )
+
+        st.plotly_chart(
+            fig_hourly,
+            width="stretch",
+            key="res_hourly_peak"
+        )
 
     # ── Parejas por pista ─────────────────────────────────────────────────────
     c1, c2 = st.columns(2)
