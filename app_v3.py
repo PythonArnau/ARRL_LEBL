@@ -1213,7 +1213,7 @@ tab1, tab2, tab3, tab4, tab5, tab5b, tab6, tab7 = st.tabs([
     "🌬️ GS",
     "⏱️ Tiempo a THR",
     "🗺️ Trayectorias",
-])
+]) 
 
 with tab1:
     tab_resumen()

@@ -5,6 +5,7 @@ import re, io, csv
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
+import zipfile
 from geo_utils2 import xy_to_latlon
 
 
@@ -198,9 +199,15 @@ def read_sql(sql_file, fecha):
     fecha_fin = fecha_inicio + timedelta(days=1)
 
     vuelos = {}
+    
+    """with open(sql_file, encoding="utf8") as f:
+        sql = f.read()"""
 
-    with open(sql_file, encoding="utf8") as f:
-        sql = f.read()
+    with zipfile.ZipFile(sql_file, "r") as zip_file:
+        sql_filename = zip_file.namelist()[0]
+
+        with zip_file.open(sql_filename) as f:
+            sql = f.read().decode("utf8")
 
     inserts = re.findall(
         r"INSERT INTO\s+`?arribades`?.*?VALUES\s*(.*?);",

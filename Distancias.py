@@ -100,12 +100,14 @@ def LeaderFollower(arrivals, flights_dict, thresholds):
             p.star_leader = flight_leader.star
             p.wake_leader = flight_leader.wake
             p.wake_recat_leader = flight_leader.wake_recat
+            p.aircraft_leader = flight_leader.aircraft
 
             p.follower = follower_id
             p.arr_hour_follower = flight_follower.arr_hour
             p.star_follower = flight_follower.star
             p.wake_follower = flight_follower.wake
             p.wake_recat_follower = flight_follower.wake_recat
+            p.aircraft_follower = flight_follower.aircraft
 
             # Indica si la pareja contiene alguna aproximación frustrada
             p.frustrada_leader = not arr_leader.last_arr
