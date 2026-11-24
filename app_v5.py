@@ -539,6 +539,7 @@ def tab_metric(v: View, col: str, name: str, unit: str, key: str):
                       labels={"dist": "Distancia a THR (NM)", col: f"{name} media ({unit})"},
                       title=f"{name} medio vs distancia a THR")
         fig.update_layout(legend_title_text="Pista", height=380)
+        fig.update_xaxes(autorange="reversed")   # de la distancia máxima (izquierda) a THR (derecha)
         st.plotly_chart(fig, width="stretch", key=f"{key}_perfil")
 
     st.subheader(f"Detalle a {dist} NM")
