@@ -424,3 +424,95 @@ def export_pairs_to_excel(pairs, output_filename="Separaciones_LEBL.xlsx", tipos
         print(f"-> Datos exportados con éxito a '{output_filename}' ({len(pairs)} parejas).")
     except Exception as e:
         print(f"Error al exportar a Excel: {e}")
+
+def export_pairs_to_csv(pairs, output_filename="Separaciones_LEBL.csv", tipos_frustrada=None):
+    """
+    Exporta la información de las parejas a un archivo CSV.
+
+    Parameters
+    ----------
+    pairs : list
+        Lista de objetos Pair.
+    output_filename : str
+        Nombre del archivo CSV de salida.
+    tipos_frustrada : dict, optional
+        Diccionario con el tipo de frustrada de cada vuelo.
+    """
+
+    if not pairs:
+        print("No hay parejas para exportar.")
+        return
+
+    if tipos_frustrada is None:
+        tipos_frustrada = {}
+
+    data = []
+
+    for p in pairs:
+        if p.frustrada_follower:
+            tipo = get_tipo_frustrada(
+                p.follower,
+                p.arr_hour_follower,
+                tipos_frustrada
+            )
+
+            frustrada_txt = f"Sí - {tipo}" if tipo else "Sí"
+        else:
+            frustrada_txt = "No"
+
+
+        row = {
+            "Pareja": p.pair,
+            "Pista": p.runway,
+            "Frustrada Seguidor": frustrada_txt,
+
+            "Líder": p.leader,
+            "STAR Líder": p.star_leader,
+            "Estela Líder": p.wake_leader,
+            "RECAT Líder": p.wake_recat_leader,
+            "Tipo Aeronave Líder": p.aircraft_leader,
+
+            "Seguidor": p.follower,
+            "STAR Seguidor": p.star_follower,
+            "Estela Seguidor": p.wake_follower,
+            "RECAT Seguidor": p.wake_recat_follower,
+            "Tipo Aeronave Seguidor": p.aircraft_follower,
+
+            # 4 NM
+            "Hora 4NM": tod_to_hhmmss(p.tod_4mile),
+            "Sep. 4NM (NM)": round(p.separation_4mile, 3) if p.separation_4mile is not None else None,
+            "Sep. Vertical 4NM (ft)": round(p.alt_4mile, 0) if p.alt_4mile is not None else None,
+            "Incumplimiento Radar 4NM": "Sí" if p.radar_4mile else "No",
+            "Incumplimiento LoA 4NM": "Sí" if p.loa_4mile else "No",
+            "Incumplimiento Estela 4NM": "Sí" if p.estela_4mile else "No",
+
+            # THR
+            "Hora THR": tod_to_hhmmss(p.tod_thr),
+            "Sep. THR (NM)": round(p.separation_thr, 3) if p.separation_thr is not None else None,
+            "Sep. Vertical THR (ft)": round(p.alt_thr, 0) if p.alt_thr is not None else None,
+            "Incumplimiento Radar THR": "Sí" if p.radar_thr else "No",
+            "Incumplimiento LoA THR": "Sí" if p.loa_thr else "No",
+            "Incumplimiento Estela THR": "Sí" if p.estela_thr else "No",
+
+            # Resultado global
+            "Separación Operacional THR": "Sí" if p.sep_op_thr else "No",
+            "Separación Operacional 4NM": "Sí" if p.sep_op_4mile else "No",
+        }
+
+        data.append(row)
+
+    df = pd.DataFrame(data)
+
+    try:
+        df.to_csv(
+            output_filename,
+            index=False,
+            sep=";",
+            decimal=",",
+            na_rep="N/A",
+            encoding="utf-8-sig"
+)
+
+        print(f"-> Datos exportados con éxito a '{output_filename}' ({len(pairs)} parejas).")
+    except Exception as e:
+        print(f"Error al exportar a CSV: {e}")

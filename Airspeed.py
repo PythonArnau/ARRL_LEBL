@@ -176,3 +176,65 @@ def export_time_to_thr_excel(arrivals, distances, output_filename, tipos_frustra
         print(f"-> Datos exportados con éxito a '{output_filename}' ({len(arrivals)} arrivals).")
     except Exception as e:
         print(f"Error al exportar a Excel: {e}")
+
+def export_flights_to_csv(arrivals, distances, output_filename="Flights_LEBL.csv", tipos_frustrada=None):
+    """
+    Exporta la información de los vuelos a un único archivo CSV:
+    - Datos generales del vuelo.
+    - IAS y GS en THR y en las distancias solicitadas.
+    - Tiempo restante hasta THR para cada distancia.
+
+    Parameters
+    ----------
+    arrivals : list[Arrival]
+    distances : list[float]
+    output_filename : str
+    tipos_frustrada : dict, optional
+    """
+
+    if tipos_frustrada is None:
+        tipos_frustrada = {}
+
+    data = []
+
+    for arr in arrivals:
+
+        if arr.numfr > 0:
+            tipo = get_tipo_frustrada(arr.callsign, arr.arr_hour, tipos_frustrada)
+            frustrada_txt = f"Sí - {tipo}" if tipo else "Sí"
+        else:
+            frustrada_txt = "No"
+
+        row = {
+            "Vuelo": arr.callsign,
+            "Frustrada": frustrada_txt,
+            "Pista": arr.runway,
+            "Tipo Aeronave": arr.aircraft,
+            "Hora llegada": arr.arr_hour,
+
+            # THR
+            "IAS THR": arr.ias_dict.get("THR"),
+            "GS THR": arr.gs_dict.get("THR"),
+        }
+
+        # Distancias
+        for dist in distances:
+            row[f"IAS {dist} NM"] = arr.ias_dict.get(dist)
+            row[f"GS {dist} NM"] = arr.gs_dict.get(dist)
+            row[f"Tiempo {dist} NM (s)"] = arr.time_to_thr_dict.get(dist)
+
+        data.append(row)
+
+    df = pd.DataFrame(data)
+
+    try:
+        df.to_csv(
+            output_filename,
+            index=False,
+            sep=";",
+            decimal=",",
+            encoding="utf-8-sig"
+        )
+        print(f"-> Datos exportados con éxito a '{output_filename}' ({len(arrivals)} vuelos).")
+    except Exception as e:
+        print(f"Error al exportar a CSV: {e}")

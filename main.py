@@ -1,10 +1,12 @@
 from Fligths import read_bbdd, get_arrivals, read_sql, read_frustrades
-from Distancias import LeaderFollower, export_pairs_to_excel, radar_sparation, loa_separation, wake_separation
+from Distancias import LeaderFollower, export_pairs_to_excel, radar_sparation, loa_separation, wake_separation, export_pairs_to_csv
 from geo_utils2 import latlon_to_xy
-from Airspeed import get_ias, export_ias_to_excel, get_time_to_thr, export_time_to_thr_excel
+from Airspeed import get_ias, export_ias_to_excel, get_time_to_thr, export_time_to_thr_excel, export_flights_to_csv
 import math
+import os
 from kml_export import export_callsign_kml
 from datetime import date
+from pathlib import Path
 
 
 #Umbrales de las pistas (posicion de google earth)
@@ -20,7 +22,13 @@ THR = {
     "LEBL-20": THR_20,
 }
 
-fecha = date(2025, 1, 13)
+# Carpetas de salida
+BASE_DIR = Path(__file__).resolve().parent
+INPUTS_DIR = BASE_DIR / "inputs"
+KML_DIR = BASE_DIR / "kml_inputs"
+
+
+fecha = date(2025, 1, 14)
 fecha_str = fecha.strftime("%d_%m_%Y")
 
 #Leer vuelos y separar en funcion si hay frustradas
@@ -43,14 +51,14 @@ loa_wake_radar_check = loa_separation(radar_wake_check)
 #Calcular IAS a distintas distancias
 dists = [1, 2, 2.5, 3, 4, 5, 6, 7, 8, 9, 10]
 ias_arrivals = get_ias(arrivals, dists, THR)
-time_to_thr_arr = get_time_to_thr(arrivals, dists, THR)
+time_to_thr_arr = get_time_to_thr(ias_arrivals, dists, THR)
 
-export_pairs_to_excel(loa_wake_radar_check, f"{fecha_str}_Results_LEBL.xlsx", tipos_frustrada)
-export_ias_to_excel(ias_arrivals,dists,f"{fecha_str}_IAS.xlsx", tipos_frustrada)
-export_time_to_thr_excel(time_to_thr_arr, dists, f"{fecha_str}_Time_to_THR.xlsx", tipos_frustrada)
+#export_pairs_to_excel(loa_wake_radar_check, f"{fecha_str}_Results_LEBL.xlsx", tipos_frustrada)
+#export_ias_to_excel(ias_arrivals,dists,f"{fecha_str}_IAS.xlsx", tipos_frustrada)
+#export_time_to_thr_excel(time_to_thr_arr, dists, f"{fecha_str}_Time_to_THR.xlsx", tipos_frustrada)
 
-# THR_xx_latlon: las coordenadas que ya usas para THR (lat, lon en grados decimales)
-#thr_latlon = (41 + 17/60 + 16.66/3600, 2 + 5/60 + 5.76/3600)   # LEBL-02
+export_pairs_to_csv(loa_wake_radar_check, str(INPUTS_DIR / f"{fecha_str}_Results_LEBL.csv"), tipos_frustrada)
+export_flights_to_csv(time_to_thr_arr, dists, str(INPUTS_DIR / f"{fecha_str}_Airspeed_Time_LEBL.csv"), tipos_frustrada)
 
-#export_callsign_kml(arrivals, "VLG11K", thr_latlon=thr_latlon)
-# genera CCA845_FR0.kml (uno por cada aproximación/frustrada)
+
+export_callsign_kml(arrivals, "RYR994R", str(KML_DIR) + os.sep)

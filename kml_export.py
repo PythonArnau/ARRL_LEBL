@@ -41,8 +41,16 @@ def _estilos():
     return "\n".join(out)
 
 
-def export_arrival_kml(arrival, output_filename, thr_latlon=None,
-                       usar_altitud=True, umbral_salto_nm=0.5):
+# Umbrales de las pistas (lat, lon en grados decimales; posición de Google Earth)
+THR_LATLON = {
+    "LEBL-24R": (41 + 18/60 + 20.37/3600, 2 + 6/60 + 12.68/3600),
+    "LEBL-06L": (41 + 17/60 + 41.70/3600, 2 + 4/60 + 19.97/3600),
+    "LEBL-02": (41 + 17/60 + 16.66/3600, 2 + 5/60 + 5.76/3600),
+    "LEBL-20": (41 + 18/60 + 32.85/3600, 2 + 5/60 + 40.51/3600),
+}
+
+
+def export_arrival_kml(arrival, output_filename, usar_altitud=True, umbral_salto_nm=0.5):
     """
     Exporta la trayectoria de una Arrival a KML para Google Earth.
 
@@ -51,18 +59,18 @@ def export_arrival_kml(arrival, output_filename, thr_latlon=None,
       - Un punto por record, coloreado por sensor (verde ADSB, rojo Radar, amarillo interpolado),
         con TimeStamp para usar el slider temporal y datos en la descripcion.
       - Tramos entre records consecutivos con salto > umbral_salto_nm en naranja (para detectar zigzag).
-      - Marcador del umbral (si se pasa thr_latlon=(lat, lon)).
+      - Marcador del umbral de la pista de la llegada (THR_LATLON).
 
     Parameters
     ----------
     arrival : Arrival
     output_filename : str
-    thr_latlon : tuple[float, float] | None
     usar_altitud : bool   (altitud absoluta en ft -> m)
     umbral_salto_nm : float   (NM entre records consecutivos para marcar un salto)
     """
     recs = arrival.records
-    nombre = f"{arrival.callsign}_FR{arrival.numfr}"
+    nombre = f"{arrival.callsign}"
+    thr_latlon = THR_LATLON.get(arrival.runway)
     alt_mode = "absolute" if usar_altitud else "clampToGround"
 
     partes = [
