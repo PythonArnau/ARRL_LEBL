@@ -1,6 +1,8 @@
-streamlit
+
+streamlit>=1.50
 pandas
+plotly>=6.0
+openpyxl
 numpy
-plotly
 mysql-connector-python
 python-dotenv
