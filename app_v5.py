@@ -725,23 +725,55 @@ def tab_trayectorias(v: View):
     st.dataframe(pd.DataFrame([_qc_row(tracks[n]) for n in shown]), width="stretch", hide_index=True)
 
     # ── Perfiles de altitud e IAS ─────────────────────────────────────────────
-    max_dist = st.slider("Distancia máxima a THR en los perfiles (NM)", 5, 60, 30, key="traj_maxd")
-    rows = []
+    # El slider se ajusta a los datos: no tiene sentido pedir más NM de las que tienen los records
+    avail = max((r["cum_dist"] for n in shown for r in tracks[n].records[: tracks[n].idx_thr + 1]
+                 if r["cum_dist"] is not None), default=0.0)
+    slider_max = max(6, min(60, int(avail) + 1))
+    max_dist = st.slider("Distancia máxima a THR en los perfiles (NM)", 1, slider_max, slider_max,
+                         key=f"traj_maxd_{slider_max}")
+    st.caption(f"Los vuelos seleccionados tienen records hasta {avail:.1f} NM antes de THR.")
+    rows, diag = [], []
     for name in shown:
         track = tracks[name]
-        for r in track.records[: track.idx_thr + 1]:
-            if r["cum_dist"] is not None and r["cum_dist"] <= max_dist:
-                rows.append({"Vuelo": name, "cum_dist": r["cum_dist"], "alt": r["alt"], "ias": r["ias"], "gs": r["gs"]})
+        until_thr = track.records[: track.idx_thr + 1]
+        inside = [r for r in until_thr if r["cum_dist"] is not None and r["cum_dist"] <= max_dist]
+        rows += [{"Vuelo": name, "cum_dist": r["cum_dist"], "alt": r["alt"], "ias": r["ias"], "gs": r["gs"]}
+                 for r in inside]
+        diag.append({
+            "Vuelo": name, "Records totales": len(track.records), "Índice record THR": track.idx_thr,
+            "Distancia máx. hasta THR (NM)": round(max((r["cum_dist"] for r in until_thr), default=0), 1),
+            "Puntos en el perfil": len(inside),
+        })
     perfil = pd.DataFrame(rows, columns=["Vuelo", "cum_dist", "alt", "ias", "gs"])
+
+    short = [d["Vuelo"] for d in diag if d["Puntos en el perfil"] < 2]
+    if short:
+        st.warning(
+            "Con esta distancia máxima hay menos de 2 puntos para: " + ", ".join(short) + ". Una línea necesita al "
+            "menos 2 puntos para dibujarse; sube la distancia máxima o revisa la tabla de diagnóstico."
+        )
+    with st.expander("Diagnóstico de los perfiles"):
+        st.dataframe(pd.DataFrame(diag), width="stretch", hide_index=True)
+        st.caption("La distancia acumulada se mide a lo largo de la trayectoria hacia atrás desde el record más "
+                   "cercano a THR; los saltos entre records (tramos naranjas del mapa) la inflan.")
     if perfil.empty:
         st.info("No hay records dentro de la distancia seleccionada.")
         return
+
     labels = {"cum_dist": "Distancia acumulada a THR (NM)", "alt": "Altitud (ft)", "ias": "IAS (kt)", "gs": "GS (kt)"}
     c1, c2 = st.columns(2)
     for col, (field, title) in zip((c1, c2), (("alt", f"Perfil vertical (últimas {max_dist} NM)"),
                                               ("ias", f"Perfil de IAS (últimas {max_dist} NM)"))):
         with col:
-            f = px.line(perfil, x="cum_dist", y=field, color="Vuelo", title=title, labels=labels)
+            f = go.Figure()
+            for n, name in enumerate(shown):
+                one = perfil[(perfil["Vuelo"] == name)].dropna(subset=["cum_dist", field]).sort_values("cum_dist")
+                if one.empty:
+                    continue
+                f.add_trace(go.Scatter(x=one["cum_dist"], y=one[field], mode="lines+markers", name=name,
+                                       line=dict(color=palette[n % len(palette)]), marker=dict(size=4)))
+            f.update_layout(title=title, xaxis_title=labels["cum_dist"], yaxis_title=labels[field],
+                            legend_title_text="Vuelo")
             f.update_xaxes(autorange="reversed")
             st.plotly_chart(f, width="stretch", key=f"traj_{field}")
 
